@@ -1,0 +1,135 @@
+---
+title: "Statistical Thinking 2023_v0"
+author: "Luis Correia"
+format: pdf
+editor: visual
+---
+
+## Lecture #1
+
+\<To be reviewed with lecture contents\>
+
+{{< pagebreak >}}
+
+## Lecture #2
+
+\<To be reviewed with lecture contents\>
+
+A new model is born when we write:
+
+$$
+W\sim Binomial(N,p)
+$$
+
+with
+
+$$
+p\sim Unif(0,1)
+$$
+
+Simulation of Bayesian Experiment
+
+```{r}
+# definegrid
+p_grid <-seq(from=0,to=1,length.out=20)
+
+# defineprior
+#prior <-rep(1,20)
+prior <-ifelse(p_grid<0.5,0,1)
+
+# computelikelihoodateachvalueingrid
+likelihood <-dbinom(6,size=9,prob=p_grid)
+
+# computeproductoflikelihoodandprior
+unstd.posterior <-likelihood*prior
+
+# standardizetheposterior,soitsumsto1
+posterior <-unstd.posterior/sum(unstd.posterior)
+```
+
+```{r}
+plot( p_grid,posterior,type="b",
+xlab="probability ofwater",ylab="posteriorprobability")
+mtext( "20points")
+```
+
+### Homework 1
+
+Suppose the globe tossing data had turned into a 4-water and 11-land. Construct the posterior distribution.
+
+```{r}
+# 2.7 analyticalcalculation
+W <-6
+L <-3
+curve( dbeta(x,W+1,L+1),from=0,to=1)
+
+# quadraticapproximation
+curve( dnorm(x,0.67,0.16),lty=2,add=TRUE)
+```
+
+```{r}
+p <- c(0, .25, .5, .75, 1)
+model <- sapply(p, function (p, W, L) return (4*p)^W*(4-4*p)^L)
+print(model)
+```
+
+```{r}
+n_samples <-1000
+p <-rep(NA,n_samples)
+p[1] <-0.5
+W <-6
+L <-3
+for (i in 2:n_samples){
+  p_new <-rnorm(1,p[i-1],0.1)
+  if (p_new < 0) p_new <- abs(p_new)
+  if (p_new > 1) p_new <- 2-p_new
+  q0 <-dbinom(W,W+L,p[i-1])
+  q1 <-dbinom(W,W+L,p_new)
+  p[i] <-ifelse(runif(1)<q1/q0,p_new,p[i-1])
+}
+```
+
+```{r}
+plot(density(p),xlim=c(0,1))
+curve( dbeta(x, W+1, L+1 ),lty=2,add=TRUE)
+```
+
+```{r}
+sample <- c('W','L','W','W','W','L','W','L','W')
+W <- sum(sample=='W') # No. of W observed
+L <- sum(sample=='L') # No. of L observed
+p <- c(0,.25,.5,.75,1) # Proportions W
+ways <- sapply(p, function (q) (q*4)^W*((1-q)*4)^L)
+prob <- ways/sum(ways)
+cbind(p, ways, prob)
+```
+
+```{r}
+sim_globe <- function (p=.7, N = 9) {
+  sample(c('W','L'), size = N, prob = c(p, 1-p), replace=TRUE)
+}
+sim_globe()
+```
+
+```{r}
+replicate(sim_globe(p = .5, N = 9), n = 10)
+```
+
+```{r}
+sum(sim_globe(p = .5, N = 1e4 )=='W')/1e4
+```
+
+```{r}
+compute_posterior <- function (the_sample, poss = c(0,.25,.5,.75,1)) {
+  W <- sum(the_sample=='W')  # No. of 'W'
+  L <- sum(the_sample=='L')  # No. of 'L'
+  ways <- sapply(p, function (q) (q*4)^W*((1-q)*4)^L)
+  post <- ways/sum(ways)
+  bars <- sapply(post, function (q) barplot(q))
+  data.frame(poss, ways, post=round(post,3), bars)
+}
+```
+
+```{r}
+compute_posterior(sim_globe())
+```

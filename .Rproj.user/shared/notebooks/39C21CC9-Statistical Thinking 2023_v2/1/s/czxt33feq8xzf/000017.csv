@@ -1,0 +1,4 @@
+"0","post <- extract.samples(m3.2)"
+"0","plot(dat$H,dat$W,col=2,lwd=3,"
+"0","     xlim=c(min(dat$H),max(dat$H)), ylim=c(min(30,dat$w),max(dat$W)),"
+"0","     xlab=""height(cm)"", ylab=""weight(kg)"")"

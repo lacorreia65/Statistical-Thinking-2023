@@ -1,0 +1,98 @@
+---
+title: "Statistical Thinking 2023"
+author: "LAC"
+date: "2023-01-11"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+  rmarkdown::pdf_document:
+    fig_caption: yes
+    number_sections: yes
+header-includes:
+- \usepackage[margin=1in]{geometry} 
+- \usepackage{amsmath,amsthm,amssymb,amsfonts}
+- \usepackage{relsize}
+- \usepackage{lscape}
+- \usepackage{enumerate}
+- \usepackage{enumitem}
+- \usepackage{setspace}
+- \usepackage{tikz}
+- \usepackage{bm}
+- \usepackage{bbm}
+- \usepackage[utf8]{inputenc}
+- \usepackage{mathtools, nccmath}
+- \usepackage{fancyhdr}
+- \usepackage{float}
+- \usepackage{longtable}
+- \usepackage{threeparttable}
+- \usepackage[linesnumbered,vlined,ruled,commentsnumbered]{algorithm2e}
+- \floatplacement{figure}{H}
+- \floatplacement{table}{H}
+- \setlength{\parskip}{1em}
+- \pagestyle{fancy}
+- \fancyhf{}
+- \rhead{Statistical Thinking 2023}
+- \rfoot{Page \thepage}
+urlcolor: blue
+---
+
+```{r setup, include=FALSE, cache = FALSE}
+require("knitr")
+
+## setting working directory
+opts_chunk$set(echo = FALSE, warning=FALSE, message = FALSE)
+
+library(ggplot2)
+library(tidyverse)
+library(dplyr)
+library(kableExtra)
+
+# The palette with black - Used in Graphs with :
+cbp1 <- c("#999999", "#E69F00", "#56B4E9", "#009E73",
+          "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+cbp2 <- c("#000000", "#E69F00", "#56B4E9", "#009E73",
+          "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+cbp3 <- c("#FFDB6D", "#C4961A", "#F4EDCA", "#D16103", 
+          "#C3D7A4", "#52854C", "#4E84C4", "#293352")
+```
+
+\section{Lecture 1}
+
+\pagebreak
+
+\section{Lecture 2}
+
+A new model has born
+
+\begin{align*}
+  W\sim Binomial(N, p) \label{eq:1a} \test{ with }p\sum U(0,1)
+\end{align*}
+
+\subsection{Simulation of a Bayesian Experiment}
+
+```{r}
+# definegrid
+p_grid <-seq(from=0,to=1,length.out=20)
+
+# defineprior
+#prior <-rep(1,20)
+prior <-ifelse(p_grid<0.5,0,1)
+
+# computelikelihoodateachvalueingrid
+likelihood <-dbinom(6,size=9,prob=p_grid)
+
+# computeproductoflikelihoodandprior
+unstd.posterior <-likelihood*prior
+
+# standardizetheposterior,soitsumsto1
+posterior <-unstd.posterior/sum(unstd.posterior)
+```
+
+
+```{r, cache=FALSE}
+plot( p_grid,posterior,type="b",
+xlab="probability ofwater",ylab="posteriorprobability")
+mtext( "20points")
+```
+

@@ -1,0 +1,2 @@
+"0","library(rethinking)"
+"0","post_samples <- rbeta(1e3, 6+1, 3+1)"

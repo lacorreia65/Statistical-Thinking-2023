@@ -1,0 +1,2 @@
+"0","plot( p_grid,posterior,type=""b"","
+"0","xlab=""probability ofwater"",ylab=""posteriorprobability"")"

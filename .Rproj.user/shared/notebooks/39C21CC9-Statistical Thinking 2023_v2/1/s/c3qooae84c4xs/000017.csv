@@ -1,0 +1,4 @@
+"0","# 2.7 analyticalcalculation"
+"0","W <-6"
+"0","L <-3"
+"0","curve( dbeta(x,W+1,L+1),from=0,to=1)"

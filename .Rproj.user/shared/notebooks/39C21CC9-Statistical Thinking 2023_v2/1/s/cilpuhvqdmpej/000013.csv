@@ -1,0 +1,5 @@
+"0","n <- 1e3"
+"0","a <- rnorm(n,0,10)"
+"0","b <- runif(n,0,1)"
+"0","plot(NULL,xlim=c(130,170),ylim=c(50,90),"
+"0","     xlab=""height(cm)"", ylab=""weight(kg)"",)"
