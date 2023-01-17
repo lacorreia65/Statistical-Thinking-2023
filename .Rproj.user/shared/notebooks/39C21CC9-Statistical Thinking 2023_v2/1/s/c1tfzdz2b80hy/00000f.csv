@@ -1,0 +1,8 @@
+"0","pos_true <- .95 # likelihood"
+"0","pos <- .01 # prior"
+"0","true_pos <- (pos_true*pos)/(pos_true*pos+(1-pos_true)*(1-pos))"
+"0","true_pos  # posterior"
+"1","[1]"
+"1"," 0.1610169"
+"1","
+"

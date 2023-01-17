@@ -1,0 +1,4 @@
+"0","p <- seq(from=.01, to=1, by=0.01); ptr <- .95"
+"0","true_pos <- sapply(p, function (q) (ptr*q)/(ptr*q+(1-ptr)*(1-q)))"
+"0",""
+"0","plot(true_pos, p, col=2, lwd=3)"

@@ -346,3 +346,19 @@ W_PI <- apply(W_postpred,2,PI)
 lines(height_seq,W_PI[1,],lty=2,lwd=2)
 lines(height_seq,W_PI[2,],lty=2,lwd=2)
 ```
+
+From book (pp.51)
+
+```{r}
+pos_true <- .95 # likelihood
+pos <- .01 # prior
+true_pos <- (pos_true*pos)/(pos_true*pos+(1-pos_true)*(1-pos))
+true_pos  # posterior
+```
+
+```{r}
+p <- seq(from=.01, to=1, by=0.01); ptr <- .95
+true_pos <- sapply(p, function (q) (ptr*q)/(ptr*q+(1-ptr)*(1-q)))
+
+plot(true_pos, p, col=2, lwd=3)
+```
