@@ -362,3 +362,31 @@ true_pos <- sapply(p, function (q) (ptr*q)/(ptr*q+(1-ptr)*(1-q)))
 
 plot(true_pos, p, col=2, lwd=3)
 ```
+
+```{r}
+n=20
+logYs = -9.89
+A = sum(logYs)-1
+B = 2*n-1+sum(logYs)
+C = n
+
+theta_hat = (-B-sqrt(B^2-4*A*C))/(2*A) ##Quadratic formula
+
+theta_vec = seq(0, 6, length=500)
+post_prop = theta_vec^n*(theta_vec+1)^n*exp(-theta_vec)*(exp(sum(logYs)))^theta_vec
+
+# pdf(file = "~/Dropbox/pubh8442/2015/Asymptotic_Posterior_Approximation_thetaDens.pdf", width = 7, height=4)
+
+plot(theta_vec,post_prop,xlim = c(0,6),  ylab = "Unormalized density", xlab = "theta", type = 'l', lwd = 2, main = "")
+abline(v=theta_hat, col = 'red')
+#dev.off()
+
+var = (1/20)*(theta_hat^2*(1+theta_hat)^2)/(theta_hat^2+(theta_hat+1)^2)
+post_approx = dnorm(theta_vec, theta_hat,sqrt(var))
+
+#pdf(file = "~/Dropbox/pubh8442/2015/Asymptotic_Posterior_Approximation_NormApp##.pdf", width = 7, height=4)
+
+plot(theta_vec,post_approx,xlim = c(0,6),  ylab = "Density", xlab = "theta", type = 'l', lwd = 2, main = "")
+abline(v=theta_hat, col = 'red')
+#dev.off()
+```

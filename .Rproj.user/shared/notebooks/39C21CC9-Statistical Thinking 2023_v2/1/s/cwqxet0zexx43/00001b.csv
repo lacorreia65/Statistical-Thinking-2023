@@ -1,0 +1,8 @@
+"0","#dev.off()"
+"0",""
+"0","var = (1/20)*(theta_hat^2*(1+theta_hat)^2)/(theta_hat^2+(theta_hat+1)^2)"
+"0","post_approx = dnorm(theta_vec, theta_hat,sqrt(var))"
+"0",""
+"0","#pdf(file = ""~/Dropbox/pubh8442/2015/Asymptotic_Posterior_Approximation_NormApp##.pdf"", width = 7, height=4)"
+"0",""
+"0","plot(theta_vec,post_approx,xlim = c(0,6),  ylab = ""Density"", xlab = ""theta"", type = 'l', lwd = 2, main = """")"
