@@ -1,0 +1,3 @@
+"0","W1 <- rnorm(1000,post$a[,1], post$sigma)"
+"0","W2 <- rnorm(1000,post$a[,2], post$sigma)"
+"0","dens(W1,xlim=c(20,70),ylim=c(0,.085),lwd=3, col=2)"

@@ -1,0 +1,2 @@
+"0","post <- extract.samples(m_SW)"
+"0","dens(post$a[,1],xlim=c(35, 55),lwd=3,col=2,xlab=""posterior mean weight(kg"")"

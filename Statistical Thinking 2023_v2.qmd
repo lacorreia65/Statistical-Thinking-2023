@@ -363,6 +363,8 @@ true_pos <- sapply(p, function (q) (ptr*q)/(ptr*q+(1-ptr)*(1-q)))
 plot(true_pos, p, col=2, lwd=3)
 ```
 
+### Intermezzo - Central Limit Theorem convergence
+
 ```{r}
 n=20
 logYs = -9.89
@@ -389,4 +391,161 @@ post_approx = dnorm(theta_vec, theta_hat,sqrt(var))
 plot(theta_vec,post_approx,xlim = c(0,6),  ylab = "Density", xlab = "theta", type = 'l', lwd = 2, main = "")
 abline(v=theta_hat, col = 'red')
 #dev.off()
+```
+
+## Lecture 4
+
+### Workflow
+
+```{r}
+library(rethinking)
+library(tidyverse)
+library(dplyr)
+
+data(Howell1)
+d <-Howell1[Howell1$age>=18,]
+```
+
+```{r}
+d |> 
+  ggplot(aes(x=height, y=weight, color=factor(male)))+
+  geom_point()+
+  theme_bw()
+
+d |> 
+  ggplot(aes(x=weight))+
+  geom_density(aes(color=factor(male)))+
+  theme_bw()
+
+d |> 
+  ggplot(aes(x=height))+
+  geom_density(aes(color=factor(male)))+
+  theme_bw()
+```
+
+```{r}
+# S = 1: female, S=2: male
+sim_HW <- function(S, b, a) {
+  N <- length(S)
+  H <- ifelse(S==1,150,160)+rnorm(N,0,5)
+  W <- a[S] + b[S]*H + rnorm(N, 0, 5)
+  data.frame(S,H,W)
+}
+```
+
+Simulating our data
+
+```{r}
+S <- rbern(100)+1
+dat <- sim_HW(S, b=c(.5,.6), a=c(0,0))
+head(dat)
+
+dat |> 
+  ggplot(aes(x=H, y=W, color=factor(S)))+
+  geom_point()+
+  theme_bw()
+```
+
+### Testing the Model
+
+```{r}
+# female sample
+S <- rep(1,100)
+simF <- sim_HW(S, b=c(.5,.6), a=c(0,0))
+
+# male sample
+S <- rep(2,100)
+simM <- sim_HW(S, b=c(.5,.6), a=c(0,0))
+
+# effect of sex (male-female)
+mean(simM$W-simF$W)
+
+```
+
+### Determine the Estimator of our model
+
+```{r}
+S <- rbern(100)+1
+dat <- sim_HW(S, b=c(.5,.6), a=c(0,0))
+
+# estimate posterior
+m_SW <- quap(
+  alist(
+    W~dnorm(mu,sigma),
+    mu <- a[S],
+    a[S] ~ dnorm(60,10),
+    sigma ~ dunif(0,10)
+  ), data=dat
+)
+precis(m_SW,depth=2)
+```
+
+### Running our model Over the Data
+
+```{r}
+# recoding
+dat <- list(
+  W = d$weight,
+  S = d$male+1
+)
+# estimate posterior
+m_SW <- quap(
+  alist(
+    W~dnorm(mu,sigma),
+    mu <- a[S],
+    a[S] ~ dnorm(60,10),
+    sigma ~ dunif(0,10)
+  ), data=dat
+)
+precis(m_SW,depth=2)
+```
+
+```{r}
+post <- extract.samples(m_SW)
+dens(post$a[,1],xlim=c(35, 55),lwd=3,col=2,xlab="posterior mean weight(kg")
+dens(post$a[,2], lwd=3,col=4,add=TRUE)
+```
+
+Simulating the weights using the posteriors obtrained
+
+```{r}
+W1 <- rnorm(1000,post$a[,1], post$sigma)
+W2 <- rnorm(1000,post$a[,2], post$sigma)
+dens(W1,xlim=c(20,70),ylim=c(0,.085),lwd=3, col=2)
+dens(W2,lwd=3, col=4, add=TRUE)
+
+```
+
+### Computing the Contrast
+
+Now we need to compute the **contrast distribution**, the difference between the categories
+
+```{r}
+mu_contrast <- post$a[,2]-post$a[,1]
+dens(mu_contrast,xlim=c(3,10),lwd=3, col=1,xlab="posterior mean weight contrast(kg)")
+```
+
+```{r}
+W1 <- rnorm(1000,post$a[,1], post$sigma)
+W2 <- rnorm(1000,post$a[,2], post$sigma)
+
+# conntrast
+W_contrast <- W2 - W1
+dens(W_contrast,xlim=c(-25,35),lwd=3, col=1, 
+     xlab="posterior weight contrast (kg)")
+
+W_up <- sum(W_contrast>0)/1000
+W_down <- sum(W_contrast<0)/1000
+cat("W_up:",W_up," and W_down:",W_down)
+
+df <- data.frame (
+  W1 = W1,
+  W2 = W2,
+  W_contrast = W_contrast,
+  W_flag = factor(W_contrast>W_up)
+)
+
+ggplot(df, aes(x=W_contrast,fill=W_flag))+
+  geom_density()+
+  theme_bw()
 ```

@@ -1,0 +1,2 @@
+"0","mu_contrast <- post$a[,2]-post$a[,1]"
+"0","dens(mu_contrast,xlim=c(3,10),lwd=3, col=1,xlab=""posterior mean weight contrast(kg)"")"

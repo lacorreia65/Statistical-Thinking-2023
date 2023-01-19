@@ -1,0 +1,7 @@
+"0","# S = 1: female, S=2: male"
+"0","sim_HW <- function(S, b, a) {"
+"0","  N <- length(S)"
+"0","  H <- ifelse(S==1,150,160)+rnorm(N,0,5)"
+"0","  W <- a[S] + b[S]*H + rnorm(N, 0, 5)"
+"0","  data.frame(S,H,W)"
+"0","}"

@@ -1,0 +1,7 @@
+"0","W1 <- rnorm(1000,post$a[,1], post$sigma)"
+"0","W2 <- rnorm(1000,post$a[,2], post$sigma)"
+"0",""
+"0","# conntrast"
+"0","W_contrast <- W2 - W1"
+"0","dens(W_contrast,xlim=c(-25,35),lwd=3, col=1, "
+"0","     xlab=""posterior weight contrast (kg)"")"
