@@ -1,0 +1,1346 @@
+---
+title: "Financial Report - V23 (US Fixed)"
+author: "Luis Correia "
+date: "January 17th 2023"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+  rmarkdown::pdf_document:
+    fig_caption: yes
+    number_sections: yes
+header-includes:
+- \usepackage[margin=1in]{geometry} 
+- \usepackage{amsmath,amsthm,amssymb,amsfonts}
+- \usepackage{relsize}
+- \usepackage{lscape}
+- \usepackage{enumerate}
+- \usepackage{setspace}
+- \usepackage{tikz}
+- \usepackage{bm}
+- \usepackage[utf8]{inputenc}
+- \usepackage{mathtools, nccmath}
+- \usepackage{fancyhdr}
+- \usepackage{float}
+- \floatplacement{figure}{H}
+- \floatplacement{table}{H}
+- \pagestyle{fancy}
+- \fancyhead[CO,CE]{---Asset Portfolio Analysis V23---}
+- \fancyfoot[RO] {\thepage}
+---
+
+```{r setup, include=FALSE}
+# - \fancyfoot[C]{Luis Correia}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, fig.width=7, fig.height=5)
+```
+
+\section{Portfolio Analysis}
+
+```{r, echo=FALSE}
+library(tidyverse)
+library(astsa)
+library(forecast)
+library(grid)
+library(quantmod)
+library(ggplot2)
+```
+
+\subsection{Summary}
+
+```{r Data Loading, echo=FALSE, warning=FALSE}
+my_assets = read_csv("LAC-Assets_v12.csv")  # Includes correction of ITAU PERS YIELD Sep 24th,2021
+cdi = read_csv("cdi.csv")
+
+# Auxiliary Variables to create and manipulate the XTS timeframes
+dt_start <- my_assets$Date[1]
+dt_end <- my_assets$Date[nrow(my_assets)]
+dt_len <- as.integer(dt_end - dt_start) + 1
+#base_xts <- xts(rep(0.0, dt_len), order.by=dt_start+0:(dt_len-1))
+s <- seq(dt_start,dt_end,by = 1)
+s <- s[!weekdays(s) %in% c('Saturday','Sunday')]
+base_xts <- xts(rep(0.0, length(s)), order.by=s)
+
+# Base CDI
+cdi_xts <- xts(cdi$CDI_m, order.by = cdi$Date)
+
+```
+
+
+```{r}
+# Multiplicative Factor
+# MFact <- 2.32069038  # Standardize Stocks to level $251,000 at Nov 30th, 2021
+MFact <- 1.0  # No Scaling
+# MFact <- 1.0/1.93028624  # Scaling Factor Nov 30th, 2021
+
+# Generates auxiliary tables to index assets
+TblAssets <- my_assets %>%
+  group_by(Inst, Asset, Type) %>% 
+  summarise()
+
+TblType <- data.frame(
+  Idx = c(1:nrow(TblAssets)),
+  Inst = TblAssets$Inst,
+  Type = TblAssets$Type,
+  Name = TblAssets$Asset
+)
+
+# Get the list of assets per institution
+GetListOfAssets <- function (Base) {
+  return (TblType %>% filter(Inst == Base) %>% pull(Idx))
+}
+
+ListAssBRAD <- GetListOfAssets("BRAD")
+ListAssITAU <- GetListOfAssets("ITAU")
+ListAssCEF <- GetListOfAssets("CEF")
+ListAssHSBC <- GetListOfAssets("HSBC")
+ListAssXPINV <- GetListOfAssets("XPINV")
+
+# Creates XTS Series of a given asset
+AssetToXTS <- function (Idx, V = "BRL", Dt = NULL) {
+  c <- ifelse(V=="BRL",5,6)
+  tm <- my_assets %>% 
+    group_by(Asset) %>% 
+    filter(Asset==TblAssets[Idx,2]) %>% 
+    pull(1) %>% 
+    as.Date(format = c("%d/%m/%Y"))
+  vl <- my_assets %>% 
+    group_by(Asset) %>% 
+    filter(Asset==TblAssets[Idx,2]) %>% 
+    pull(c)
+  return(xts(vl*MFact, order.by = tm))
+}
+
+#BindedAssetToXTS <- function (LstAsset, V = "BRL", Dt = NULL) {
+#  c <- ifelse(V=="BRL","ValueBRL","ValueUSD")
+#  
+#  bnd <- data.frame()
+
+#  for (i in 1:length(LstAsset)) {
+#    print("Processing...",LstAsset[i])
+#    tm <- my_assets %>% 
+#      group_by(Asset) %>% 
+#      filter(Asset == TblType[LstAsset[i],4]) %>% 
+#      pull(1) %>% 
+#      as.Date(format = c("%d/%m/%Y"))
+#    vl <- my_assets %>% 
+#        group_by(Asset) %>% 
+#      filter(Asset == TblType[LstAsset[i],4]) %>% 
+#      pull(c)
+
+#    bnd <- data.frame(Series = cbind(as.xts(bnd),xts(vl*MFact, order.by = tm)))
+#  }
+
+#  colnames(bnd) <- paste0("Asset",LstAsset)
+
+#  bnd <- bnd %>% mutate(TotPort = rowSums(., na.rm = TRUE))
+
+#  return(bnd)
+#}
+
+```
+
+```{r}
+# NEW Routine for XTS preparation - March 28th 2022 @ v20
+BindedAssetToXTS <- function (LstAsset, V = "BRL", Dt = NULL) {
+  c <- ifelse(V=="BRL","ValueBRL","ValueUSD")
+  
+  bnd <- base_xts
+  
+  for (i in 1:length(LstAsset)) {
+    # cat("\nProcessing...",LstAsset[i])
+    tm <- my_assets %>% 
+      group_by(Asset) %>% 
+      filter(Asset == TblType[LstAsset[i],4]) %>% 
+      pull(1) %>% 
+      as.Date(format = c("%d/%m/%Y"))
+    vl <- my_assets %>% 
+      group_by(Asset) %>% 
+      filter(Asset == TblType[LstAsset[i],4]) %>% 
+      pull(c)
+    
+    #    bnd <- data.frame(Series = cbind(as.xts(bnd),xts(vl*MFact, order.by = tm)))
+    bnd <- merge(bnd, xts(vl*MFact, order.by = tm, na.rm = TRUE))
+  }
+  
+  bnd_df <- as.data.frame(bnd)
+  
+  colnames(bnd_df) <- paste0("Asset",c(0,LstAsset))
+  
+  bnd_df <- bnd_df %>% mutate(TotPort = rowSums(., na.rm = TRUE))
+  
+  return(bnd_df)
+}
+
+```
+
+
+```{r}
+# Flag to exclude Stock Assets from the analysis
+NoStockAssets <- FALSE
+
+# if (NoStockAssets) StockAssets <- c(7,11,29, 19, 20, 24) else StockAssets <- c()
+if (NoStockAssets) StockAssets <- c(7,11,13,30) else StockAssets <- c()
+
+# List of Assets to consider - Sub-Portfolio
+ListSubPortif <- setdiff(1:nrow(TblAssets), StockAssets)
+
+Tm <- index(base_xts)  # Needs to be an asset active since Jan-2018
+
+# Build sub-dataframes
+db_All <- BindedAssetToXTS(ListSubPortif)
+
+db_All <- subset(db_All, select = -c(Asset0)) %>%
+  mutate(# TotPort = rowSums(., na.rm = TRUE), 
+         TotPortBR = TotPort - Asset24,         # Remove US-HSBC Asset
+         Date = Tm)
+
+DbWork_All <- pivot_longer(data = db_All, cols = Asset1:TotPortBR, names_to = "Asset", values_to = "Vl") %>% 
+  mutate(Name = TblType$Name[as.numeric(substr(Asset, start = 6, stop = length(Asset)))],
+         Inst = TblType$Inst[as.numeric(substr(Asset, start = 6, stop = length(Asset)))])
+
+
+# Create Sub-Portfolios
+
+## - Bradesco
+db_BRAD <- BindedAssetToXTS(setdiff(ListAssBRAD,StockAssets))
+names(db_BRAD)[ncol(db_BRAD)] <- "TotPortBRAD"
+db_BRAD <- subset(db_BRAD, select = -c(Asset0)) %>%
+  mutate(Date = Tm)
+DbWorkBRAD <- pivot_longer(data = db_BRAD, cols = paste0("Asset",
+              setdiff(ListAssBRAD,StockAssets)[1]):TotPortBRAD, names_to = "Asset", values_to = "Vl") %>% 
+  mutate(Name = TblType$Name[as.numeric(substr(Asset, start = 6, stop = length(Asset)))],
+         Inst = "BRAD")
+
+## - Itau
+db_ITAU <- BindedAssetToXTS(setdiff(ListAssITAU,StockAssets))
+names(db_ITAU)[ncol(db_ITAU)] <- "TotPortITAU"
+db_ITAU <- subset(db_ITAU, select = -c(Asset0)) %>%
+#  mutate(Date = index(AssetToXTS(TblType$Idx[25])))
+  mutate(Date = Tm)
+DbWorkITAU <- pivot_longer(data = db_ITAU, cols = paste0("Asset",
+                setdiff(ListAssITAU,StockAssets)[1]):TotPortITAU, names_to = "Asset", values_to = "Vl") %>% 
+  mutate(Name = TblType$Name[as.numeric(substr(Asset, start = 6, stop = length(Asset)))],
+         Inst = "ITAU")
+
+## - XP Investimentos
+db_XPINV <- BindedAssetToXTS(ListAssXPINV)
+names(db_XPINV)[ncol(db_XPINV)] <- "TotPortXP"
+db_XPINV <- subset(db_XPINV, select = -c(Asset0)) %>%
+#  mutate(Date = index(AssetToXTS(TblType$Idx[33])))
+  mutate(Date = Tm)
+DbWorkXP <- pivot_longer(data = db_XPINV, cols = paste0("Asset",ListAssXPINV[1]):TotPortXP, names_to = "Asset", values_to = "Vl") %>% 
+  mutate(Name = TblType$Name[as.numeric(substr(Asset, start = 6, stop = length(Asset)))],
+         Inst = "XPINV")
+
+
+## - CEF
+db_CEF <- BindedAssetToXTS(ListAssCEF)
+names(db_CEF)[ncol(db_CEF)] <- "TotPortCEF"
+db_CEF <- subset(db_CEF, select = -c(Asset0)) %>%
+#  mutate(Date = index(AssetToXTS(TblType$Idx[21])))
+  mutate(Date = Tm)
+DbWorkCEF <- pivot_longer(data = db_CEF, cols = paste0("Asset",ListAssCEF[1]):TotPortCEF, names_to = "Asset", values_to = "Vl") %>% 
+  mutate(Name = TblType$Name[as.numeric(substr(Asset, start = 6, stop = length(Asset)))],
+         Inst = "CEF")
+
+## - HSBC
+db_HSBC <-  BindedAssetToXTS(ListAssHSBC)
+
+names(db_HSBC)[ncol(db_HSBC)] <- "TotPortHSBC"
+
+db_HSBC <- subset(db_HSBC, select = -c(Asset0)) %>%
+#  mutate(Date = index(AssetToXTS(TblType$Idx[23])))
+  mutate(Date = Tm)
+
+```
+
+\textbf{Overall Market analysis}
+
+High volatility of stock markets affected profitability of Stock and Multimarket funds.
+
+```{r}
+# Transition to new dataframes
+DbWork <- DbWork_All 
+DbAssetsBRAD <- db_BRAD
+DbAssetsCEF <- db_CEF
+DbAssetsITAU <- db_ITAU
+DbAssetsXP <- db_XPINV
+
+remove(DbWork_All)
+remove(db_BRAD)
+remove(db_CEF)
+remove(db_ITAU)
+remove(db_XPINV)
+
+```
+
+
+\subsection{Total portfolio}
+```{r, fig.cap= 'Total Portfolio', fig.height = 3.5, fig.width = 6}
+DbWork %>%
+  filter((Asset=="TotPort") & (Date > "2020-08-15") & !(is.na(Vl) | Vl == 0.0)) %>% 
+  ggplot(aes(x = Date, y = Vl)) + 
+  geom_line(size = 0.8) + 
+  ggtitle("Total Portfolio") + 
+  xlab("Date") + ylab("Amount Invested") + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  scale_x_date(date_labels = "%b %y", date_breaks = "3 months")+
+  theme_bw()
+
+P <- monthlyReturn(xts(DbWork %>% filter(Asset=="TotPort") %>% pull(Vl), order.by = Tm))
+# mean(P)
+
+autoplot(P)+
+  theme_bw()
+
+PrtTbl <- as.data.frame(format(round(P*100, digits=4), width = 8, 
+                               digits = 2, nsmall = 4, justify = "right"))
+
+rownames(PrtTbl) <- index(P)
+
+PrtTbl %>%
+  kableExtra::kbl(booktabs = TRUE, digits = 6, longtable = TRUE, 
+      col.names = c("Return Pct."), align = "r",
+      caption = "Portfolio Return") %>% 
+  kableExtra::kable_styling(font_size = 12, repeat_header_continued = TRUE,
+                repeat_header_text = "\\textit{(continued)}",latex_options = c("repeat_header"))
+
+#kableExtra::kable(PrtTbl, "latex", col.names = c("Return Pct."), align = "r",
+#                  booktabs = T, caption = "Portfolio Return")
+```
+\subsubsection{Portfolio Composition}
+
+```{r}
+AssetAlloc <- DbWork %>%
+  inner_join(TblType) %>%
+  group_by(Date) %>% 
+  mutate(TotalDay = sum(Vl, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  group_by(Date, Inst) %>% 
+  mutate(TotalDayInst = sum(Vl, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  group_by(Date, Inst, Type) %>%
+  mutate(TotAsset = sum(Vl, na.rm = TRUE),
+    PctAsset = TotAsset/TotalDay,
+    PctInst = TotalDayInst/TotalDay,
+    PctAssetInst = Vl/TotalDayInst) %>%
+  ungroup()
+
+LastAssetAlloc <- AssetAlloc %>%
+  filter(Date==dt_end, PctAsset>0.0, PctAssetInst>0.0) %>%
+  group_by(Inst, Type) %>% 
+  mutate(SumPctAssetInst = sum(PctAssetInst)) %>%
+  ungroup() %>% 
+  group_by(Date, Inst, Type, PctInst, PctAsset, SumPctAssetInst) %>% 
+  summarise()
+
+# The palette with black:
+cbbPalette <- c("#00e000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7", "#FF72B2")
+
+pct_format = scales::percent_format(accuracy = .1)
+
+LastAssetAlloc %>%
+  group_by(Inst, PctInst) %>%
+  summarise() %>% 
+  ggplot(aes(x="", y=PctInst, fill=Inst))+
+  geom_bar(width = 0.5, stat = "identity")+
+  geom_text(aes(label=pct_format(PctInst)),
+            position=position_stack(vjust=0.5))+
+  xlab("Portfolio-BR")+ylab("(%) Allocation")+
+  scale_fill_manual(values=cbbPalette)+
+  theme_bw()
+
+LastAssetAlloc %>%
+  group_by(Inst, Type, PctAsset) %>%
+  summarise() %>% 
+  ggplot(aes(x="", y=PctAsset, fill=Type))+
+  geom_bar(width = 0.5, stat = "identity")+
+  geom_text(aes(label=pct_format(PctAsset)),
+            position=position_stack(vjust=0.5))+
+  xlab("Portfolio-BR")+ylab("(%) Allocation")+
+  scale_fill_manual(values=cbbPalette)+
+  theme_bw()
+
+LastAssetAlloc %>%
+  group_by(Inst, Type, SumPctAssetInst) %>%
+  summarise() %>% 
+  ggplot(aes(x="", y=SumPctAssetInst, fill=Type))+
+  geom_bar(width = 0.5, stat = "identity")+
+  geom_text(aes(label=pct_format(SumPctAssetInst)),
+            position=position_stack(vjust=0.5))+
+  xlab("Portfolio-BR")+ylab("(%) Allocation")+
+  scale_fill_manual(values=cbbPalette)+
+  facet_wrap(~Inst)+
+  theme_bw()
+
+PrtTbl <- cbind(LastAssetAlloc[,2:3],
+                as.data.frame(pct_format(LastAssetAlloc$PctAsset)),
+                as.data.frame(pct_format(LastAssetAlloc$SumPctAssetInst)))
+colnames(PrtTbl) <- c('Inst', 'Type', '(%) Tot.', '(%) Inst.')
+
+kableExtra::kable(PrtTbl, "latex", align = "r",
+                  booktabs = T, caption = "Portfolio Alocation")
+
+```
+
+\subsubsection{Asset List}
+
+```{r}
+
+PrtTbl <- DbWork %>%
+  filter(Date == dt_end, Vl > 0.0, !is.na(Inst)) %>% 
+  select(Inst, Name, Vl)
+  
+# rownames(PrtTbl) <- index(P)
+
+kableExtra::kable(PrtTbl, "latex", col.names = c("Inst.","Asset", "Val.BRL"), align = "l",
+                  booktabs = T, caption = "Asset List by Institution")
+```
+
+
+```{r, include=FALSE, eval=FALSE, fig.width=12, fig.height=9}
+Df <- AssetAlloc %>%
+  filter(Date > "2021-04-15") %>% 
+  group_by(Date, Inst, TotalDayInst) %>% 
+  summarise()
+
+par(mfrow=c(2,2))
+plot(diff(Df %>% filter(Inst == "BRAD") %>% pull(TotalDayInst)), type="l")
+plot(diff(Df %>% filter(Inst == "ITAU") %>% pull(TotalDayInst)), type="l")
+plot(diff(Df %>% filter(Inst == "XPINV") %>% pull(TotalDayInst)), type="l")
+plot(diff(Df %>% filter(Inst == "CEF") %>% pull(TotalDayInst)), type="l")
+par(mfrow=c(1,1))
+
+
+```
+
+\subsection{Portfolio-Brazil}
+
+```{r, fig.cap= 'Portfolio-BR', fig.height = 3.5, fig.width = 6}
+DbWork %>%
+  filter((Asset=="TotPortBR") & (Date > "2021-03-15")) %>% 
+  ggplot(aes(x = Date, y = Vl)) + 
+  geom_line(size = 0.8) + 
+  ggtitle("Total Portfolio BR") + 
+  xlab("Date") + ylab("Amount Invested") + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  scale_x_date(date_labels = "%b %y", date_breaks = "3 months")+
+  theme_bw()
+
+S <- xts(DbWork %>% filter(Asset=="TotPortBR") %>% pull(Vl), order.by = Tm)
+P <- monthlyReturn(S)
+Y <- yearlyReturn(S)
+
+autoplot(P*100.0)+
+  geom_line(aes(y=tail(cdi_xts,length(P))), size=0.8, colour="red")+
+  theme_bw()
+
+PrtTbl <- data.frame(mreturn = format(round(P*100.0, digits=4), width = 8, 
+                               digits = 2, nsmall = 4, justify = "right"),
+                     cdi = format(cdi_xts, width = 8, 
+                               digits = 2, nsmall = 4, justify = "right"),
+                     diffrcdi = format(P*100.0-cdi_xts, width = 8, 
+                               digits = 2, nsmall = 4, justify = "right"))
+
+rownames(PrtTbl) <- index(P)
+
+PrtTbl %>%
+  kableExtra::kbl(booktabs = TRUE, digits = 6, longtable = TRUE, 
+                  col.names = c("Return Pct.", "CDI", "Diff."), align = "rr",
+      caption = "BR-Portfolio Return") %>% 
+  kableExtra::kable_styling(font_size = 12, repeat_header_continued = TRUE,
+                repeat_header_text = "\\textit{(continued)}",latex_options = c("repeat_header"))
+
+```
+
+```{r}
+list_dates <- tail(time(cdi_xts),24)
+
+V <- xts(DbWork %>% filter(Asset=="TotPortBR") %>% pull(Vl), order.by = Tm)
+
+chartSeries(V[index(V)>"2021-03-15"], theme="white",
+     TA="addWMA(5);addWMA(22);addRSI()", name="Port-BR")
+
+```
+
+
+\textbf{Portfolio Volatility Compared - Itau-Bradesco}
+
+```{r, fig.cap= 'Stardardized Portfolios Compared'}
+# Portfolios to be compared
+Cf <- (DbWorkCEF %>% filter((Asset=="TotPortCEF") & (Date > "2021-03-15") & !(is.na(Vl) | Vl == 0.0)))
+It <- (DbWorkITAU %>% filter((Asset=="TotPortITAU") & (Date > "2021-03-15") & !(is.na(Vl) | Vl == 0.0)))
+Br <- (DbWorkBRAD %>% filter((Asset=="TotPortBRAD") & (Date > "2021-03-15") & !(is.na(Vl) | Vl == 0.0)))
+Xp <- (DbWorkXP %>% filter((Asset=="TotPortXP") & (Date > "2021-03-15") & !(is.na(Vl) | Vl == 0.0)))
+
+# Finding Maximum / Minimum to standardize series
+MxI <- max(It$Vl); MiI <- min(It$Vl)
+MxB <- max(Br$Vl); MiB <- min(Br$Vl)
+MxC <- max(Cf$Vl); MiC <- min(Cf$Vl)
+MxX <- max(Xp$Vl); MiX <- min(Xp$Vl)
+
+ggplot(data = It) + 
+  geom_line(aes(x = Date, y = (Vl-MiI)/(MxI-MiI), color = "ITAU"), size = 1) +
+  geom_line(data = Br, aes(x = Date, y = (Vl-MiB)/(MxB-MiB), color = "BRAD"), size = 1)+
+  geom_line(data = Xp, aes(x = Date, y = (Vl-MiX)/(MxX-MiX), color = "XPInv"), size = 1)+
+#  geom_line(data = Cf, aes(x = Date, y = (Vl-MiC)/(MxC-MiC), color = "CEF"), size = 1)+
+  ggtitle("Standardized Portfolios") + 
+  xlab("Date") + ylab("Net Portfolio Variation") + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  scale_x_date(date_labels = "%d%b", date_breaks = "3 months")+
+  theme_bw()
+```
+
+\subsection{Portfolio Bradesco}
+
+```{r, fig.cap= 'Portfolio Bradesco', fig.height = 3.5, fig.width = 6}
+# --------------------------------------------
+# BRADESCO -------------------
+# --------------------------------------------
+DbWorkBRAD %>%
+  filter((Asset=="TotPortBRAD") & (Date > "2021-03-15") & !(is.na(Vl) | Vl == 0.0)) %>% 
+  ggplot(aes(x = Date, y = Vl)) + 
+  geom_line(size = 0.8) + 
+  ggtitle("Total Portfolio") + 
+  xlab("Date") + ylab("Amount Invested") + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  scale_x_date(date_labels = "%b %y", date_breaks = "2 month")+
+  theme_bw()
+
+db_tmp <- DbWorkBRAD |> filter((Asset=="TotPortBRAD") & !(is.na(Vl) | Vl == 0.0))
+S <- xts(db_tmp$Vl, order.by = db_tmp$Date)
+P <- monthlyReturn(S)
+Y <- yearlyReturn(S)
+
+autoplot(P*100.0)+
+  geom_line(aes(y=tail(cdi_xts,length(P))), size=0.8, colour="red")+
+  theme_bw()
+
+PrtTbl <- data.frame(mreturn = format(round(P*100.0, digits=6), width = 8, 
+                               digits = 2, nsmall = 6, justify = "right"),
+                     cdi = format(cdi_xts, width = 8, 
+                               digits = 2, nsmall = 6, justify = "right"),
+                     diffrcdi = format(P*100.0-cdi_xts, width = 8, 
+                               digits = 2, nsmall = 6, justify = "right"))
+rownames(PrtTbl) <- index(P)
+
+PrtTbl %>%
+  kableExtra::kbl(booktabs = TRUE, digits = 6, longtable = TRUE, 
+                  col.names = c("Return Pct.", "CDI", "Diff."), align = "rr",
+      caption = "BRADESCO-Portfolio Return") %>% 
+  kableExtra::kable_styling(font_size = 12, repeat_header_continued = TRUE,
+                repeat_header_text = "\\textit{(continued)}",latex_options = c("repeat_header"))
+```
+
+
+```{r, include=FALSE, eval=FALSE}
+chart_Series(xts(db_All$TotPortBR, order.by = db_All$Date))
+```
+
+\subsection{Portfolio Itau}
+
+```{r, fig.cap= 'Portfolio Itau', fig.height = 3.5, fig.width = 6}
+# --------------------------------------------
+# ITAU -------------------
+# --------------------------------------------
+
+DbWorkITAU%>%
+  filter((Asset=="TotPortITAU") & (Date > "2021-03-15") & !(is.na(Vl) | Vl == 0.0)) %>% 
+  ggplot(aes(x = Date, y = Vl)) + 
+  geom_line(size = 0.8) + 
+  ggtitle("Total Portfolio") + 
+  xlab("Date") + ylab("Amount Invested") + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  scale_x_date(date_labels = "%b %y", date_breaks = "3 month")+
+  theme_bw()
+
+db_tmp <- DbWorkITAU |> filter((Asset=="TotPortITAU") & !(is.na(Vl) | Vl == 0.0))
+S <- xts(db_tmp$Vl, order.by = db_tmp$Date)
+P <- monthlyReturn(S)
+Y <- yearlyReturn(S)
+
+autoplot(P*100.0)+
+  geom_line(aes(y=tail(cdi_xts,length(P))), size=0.8, colour="red")+
+  theme_bw()
+
+PrtTbl <- data.frame(mreturn = format(round(P*100.0, digits=6), width = 8, 
+                               digits = 2, nsmall = 6, justify = "right"),
+                     cdi = format(cdi_xts[index(P)], width = 8, 
+                               digits = 2, nsmall = 6, justify = "right"),
+                     diffrcdi = format(P*100.0-cdi_xts, width = 8, 
+                               digits = 2, nsmall = 6, justify = "right"))
+rownames(PrtTbl) <- index(P)
+
+PrtTbl %>%
+  kableExtra::kbl(booktabs = TRUE, digits = 6, longtable = TRUE, 
+                  col.names = c("Return Pct.", "CDI", "Diff."), align = "rr",
+      caption = "ITAU-Portfolio Return") %>% 
+  kableExtra::kable_styling(font_size = 12, repeat_header_continued = TRUE,
+                repeat_header_text = "\\textit{(continued)}",latex_options = c("repeat_header"))
+```
+
+\subsection{Portfolio CEF}
+
+```{r, fig.cap= 'Portfolio CEF', fig.height = 3.5, fig.width = 6}
+# --------------------------------------------
+# CEF -------------------
+# --------------------------------------------
+DbWorkCEF%>%
+  filter((Asset=="TotPortCEF") & (Date > "2021-03-15") & !(is.na(Vl) | Vl == 0.0)) %>% 
+  ggplot(aes(x = Date, y = Vl)) + 
+  geom_line(size = 0.8) + 
+  ggtitle("Total Portfolio") + 
+  xlab("Date") + ylab("Amount Invested") + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  scale_x_date(date_labels = "%b %y", date_breaks = "3 month")+
+  theme_bw()
+
+db_tmp <- DbWorkCEF |> filter((Asset=="TotPortCEF") & !(is.na(Vl) | Vl == 0.0))
+S <- xts(db_tmp$Vl, order.by = db_tmp$Date)
+P <- monthlyReturn(S)
+Y <- yearlyReturn(S)
+
+autoplot(P*100.0)+
+  geom_line(aes(y=tail(cdi_xts,length(P))), size=0.8, colour="red")+
+  theme_bw()
+
+PrtTbl <- data.frame(mreturn = format(round(P*100.0, digits=6), width = 8, 
+                               digits = 2, nsmall = 6, justify = "right"),
+                     cdi = format(cdi_xts[index(P)], width = 8, 
+                               digits = 2, nsmall = 6, justify = "right"),
+                     diffrcdi = format(P*100.0-cdi_xts, width = 8, 
+                               digits = 2, nsmall = 6, justify = "right"))
+rownames(PrtTbl) <- index(P)
+
+PrtTbl %>%
+  kableExtra::kbl(booktabs = TRUE, digits = 6, longtable = TRUE, 
+                  col.names = c("Return Pct.", "CDI", "Diff."), align = "rr",
+      caption = "CEF-Portfolio Return") %>% 
+  kableExtra::kable_styling(font_size = 12, repeat_header_continued = TRUE,
+                repeat_header_text = "\\textit{(continued)}",latex_options = c("repeat_header"))
+```
+
+\subsection{Portfolio XP-INV}
+
+```{r, fig.cap= 'Portfolio XP-INV', fig.height = 3.5, fig.width = 6}
+# --------------------------------------------
+# CEF -------------------
+# --------------------------------------------
+DbWorkXP%>%
+  filter((Asset=="TotPortXP") & (Date > "2021-03-15") & !(is.na(Vl) | Vl == 0.0)) %>% 
+  ggplot(aes(x = Date, y = Vl)) + 
+  geom_line(size = 0.8) + 
+  ggtitle("Total Portfolio") + 
+  xlab("Date") + ylab("Amount Invested") + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  scale_x_date(date_labels = "%b %y", date_breaks = "3 month")+
+  theme_bw()
+
+db_tmp <- DbWorkXP |> filter((Asset=="TotPortXP") & !(is.na(Vl) | Vl == 0.0))
+S <- xts(db_tmp$Vl, order.by = db_tmp$Date)
+P <- monthlyReturn(S)
+Y <- yearlyReturn(S)
+
+autoplot(P*100.0)+
+  geom_line(aes(y=tail(cdi_xts,length(P))), size=0.8, colour="red")+
+  theme_bw()
+
+PrtTbl <- data.frame(mreturn = format(round(P*100.0, digits=6), width = 8, 
+                               digits = 2, nsmall = 6, justify = "right"),
+                     cdi = format(cdi_xts[index(P)], width = 8, 
+                               digits = 2, nsmall = 6, justify = "right"),
+                     diffrcdi = format(P*100.0-cdi_xts, width = 8, 
+                               digits = 2, nsmall = 6, justify = "right"))
+rownames(PrtTbl) <- index(P)
+
+PrtTbl %>%
+  kableExtra::kbl(booktabs = TRUE, digits = 6, longtable = TRUE, 
+                  col.names = c("Return Pct.", "CDI", "Diff."), align = "rr",
+      caption = "XP-Portfolio Return") %>% 
+  kableExtra::kable_styling(font_size = 12, repeat_header_continued = TRUE,
+                repeat_header_text = "\\textit{(continued)}",latex_options = c("repeat_header"))
+
+```
+
+
+```{r, fig.cap= 'Portfolio Volatility - Bradesco vs Itau', fig.height = 3.5, fig.width = 6}
+X <- ts(DbWorkBRAD %>% 
+          filter((Asset=="TotPortBRAD") & (Date > "2021-02-28") & !(is.na(Vl) | Vl == 0.0)) %>% 
+          pull(Vl), start = as.Date("2021-02-28"), end = dt_end, frequency = 1)
+
+Y <- ts(DbWorkITAU %>% 
+          filter((Asset=="TotPortITAU") & (Date > "2021-03-01") & !(is.na(Vl) | Vl == 0.0)) %>% 
+          pull(Vl), start = as.Date("2021-02-28"), end = dt_end, frequency = 1)
+
+#D <- data.frame(B = diff(X)/mean(X), I = diff(Y)/mean(Y))
+D <- data.frame(B = (X-mean(X))/sd(X), I = (Y-mean(Y))/sd(Y))
+
+#ggplot(D, aes(x = as.Date(tail(index(X),-1)), y = B , color = "Bradesco")) + 
+ggplot(D, aes(x = as.Date(index(X)), y = B , color = "Bradesco")) + 
+  geom_line(size = 0.8) + 
+  geom_line(aes(y = I, color = "Itau"), size = 0.8) + 
+  ggtitle("Portfolio Volatility") + 
+  xlab("Date") + ylab("Portfolios") + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  scale_x_date(date_labels = "%b %y", date_breaks = "3 month")+
+  theme_bw()
+
+```
+
+```{r, fig.cap= 'Portfolio Return - Bradesco vs Itau', fig.height = 3.5, fig.width = 6}
+R1 <- monthlyReturn(X)
+R2 <- monthlyReturn(Y)
+
+PrtTbl <- data.frame(format(round(R1$monthly.returns*100,digits=2), width = 8, 
+                                  digits = 2, nsmall = 2, justify = "right"),
+                     format(round(R2$monthly.returns*100,digits=2), width = 8, 
+                                  digits = 2, nsmall = 2, justify = "right"))
+
+rownames(PrtTbl) <- index(R1)
+
+PrtTbl %>% 
+  ggplot(aes(x = index(R1), y = R1, color = "Bradesco")) + 
+  geom_line(size = 0.8) + 
+  geom_line(aes(y = R2, color = "Itau"), size = 0.8) + 
+  ggtitle("Monthly Return") + 
+  xlab("Date") + ylab("Return Pct.") + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  scale_x_date(date_labels = "%b %y", date_breaks = "3 month")+
+  theme_bw()
+
+
+kableExtra::kable(PrtTbl, "latex", col.names = c("Bradesco","Itau"), align = "rr",
+                  booktabs = T, caption = "Portfolio Return Pct.")
+
+```
+\subsection{Fixed Income Interest}
+
+```{r}
+# Creates function to convert a specific asset into xts() format
+
+SelSubTS <- function (Code) {
+  DbTmp <- SubDB %>% filter(Asset == Code) %>% select(Date, Vl)
+  TSTmp <- xts(DbTmp$Vl, order.by = DbTmp$Date)
+  colnames(TSTmp) <- "Vl"
+  return(TSTmp)
+}
+
+```
+
+
+```{r, include=FALSE, eval=FALSE, fig.cap= 'Fixed Income Interest', fig.height = 3.5, fig.width = 6}
+TypeAsset <- "Pre-Fixed Income"
+
+IdxAsset <- TblType %>% filter(Type %in% TypeAsset) %>% pull(Idx)
+
+CodeAssets <- paste0("Asset", IdxAsset)
+
+n <- length(CodeAssets)
+
+NmAssets <- TblType %>% filter(Idx %in% IdxAsset) %>% pull(Name)
+
+LstAssets <- list(TypeAsset, n, IdxAsset, CodeAssets, NmAssets) # Not in use
+
+SubDB <- DbWork %>% 
+  filter((Asset %in% CodeAssets[1] ) & (Date > "2021-02-15"))
+
+P <- ggplot(SubDB, aes(x=Date,y=Vl)) +
+  geom_line(size=0.8)+
+  facet_wrap(~Name)+
+  xlab("Date") + ylab("Price") + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  scale_x_date(date_labels = "%b %y", date_breaks = "1 month")+
+  theme_bw()
+P + theme(axis.text.x=element_text(angle=90))
+```
+
+\subsubsection{Performance}
+
+Monthly performance
+
+```{r, include=FALSE, eval=FALSE, fig.cap= 'Fixed Income Interest', fig.height = 3.5, fig.width = 6}
+R1 <- monthlyReturn(SelSubTS(CodeAssets[1])); colnames(R1) <- NmAssets[1]
+
+autoplot(R1)+
+  theme_bw()
+
+```
+
+\subsection{Stocks}
+
+\subsubsection{Historical Series}
+
+```{r, include=TRUE, eval=TRUE, fig.cap= 'Equities', fig.height = 3.5, fig.width = 6}
+TypeAsset <- "Stocks"
+
+IdxAsset <- TblType %>% filter(Type %in% TypeAsset) %>% pull(Idx)
+
+CodeAssets <- paste0("Asset", IdxAsset)
+
+n <- length(CodeAssets)
+
+NmAssets <- TblType %>% filter(Idx %in% IdxAsset) %>% pull(Name)
+
+LstAssets <- list(TypeAsset, n, IdxAsset, CodeAssets, NmAssets) # Not in use
+
+SubDB <- DbWork %>% 
+  filter((Asset %in% CodeAssets[4:5] ) & (Date > "2020-01-14"))
+
+# Creates function to convert a specific asset into xts() format
+
+P <- ggplot(SubDB, aes(x=Date,y=Vl)) +
+  geom_line(size=0.7)+
+  facet_wrap(~Name)+
+  xlab("Date") + ylab("Price") + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  scale_x_date(date_labels = "%b %y", date_breaks = "4 month")+
+  theme_bw()
+P + theme(axis.text.x=element_text(angle=90))
+
+```
+
+\subsubsection{Performance}
+
+Monthly performance
+
+```{r, include=TRUE, eval=TRUE, fig.cap= 'Equities', fig.height = 3.5, fig.width = 6}
+#R2 <- monthlyReturn(SelSubTS(CodeAssets[2])); colnames(R2) <- NmAssets[2]
+#R3 <- monthlyReturn(SelSubTS(CodeAssets[3])); colnames(R3) <- NmAssets[3]
+R4 <- monthlyReturn(SelSubTS(CodeAssets[4])); colnames(R4) <- NmAssets[4]
+R5 <- monthlyReturn(SelSubTS(CodeAssets[5])); colnames(R5) <- NmAssets[5]
+
+PrtTbl <- cbind(R4, R5)
+
+autoplot(PrtTbl)+
+  theme_bw()
+
+#PrtTbl <- data.frame(index(R3), format(round(R2*100,digits=4), width = 8, 
+#                                       digits = 2, nsmall = 4, justify = "centre"),
+#                     format(round(R3*100,digits=4), width = 8, 
+#                            digits = 2, nsmall = 4, justify = "centre"),
+#                     format(round(R4*100,digits=4), width = 8, 
+#                            digits = 2, nsmall = 4, justify = "centre"),
+#                     format(round(R5*100,digits=4), width = 8, 
+#                            digits = 2, nsmall = 4, justify = "centre"))
+kableExtra::kable(PrtTbl, "latex", align = "rrr", col.names = c(NmAssets[4],NmAssets[5]), 
+                  booktabs = T, caption = "Monthly Return Pct.") %>% 
+  kableExtra::column_spec(2:5, width = "4cm")
+
+```
+
+\subsection{Real State}
+
+\subsubsection{Historical Series}
+
+```{r, include=TRUE, eval=TRUE, fig.cap= 'Real State', fig.height = 3.5, fig.width = 6}
+TypeAsset <- "Real State"
+
+IdxAsset <- TblType %>% filter(Type %in% TypeAsset) %>% pull(Idx)
+
+CodeAssets <- paste0("Asset", IdxAsset)
+
+n <- length(CodeAssets)
+
+NmAssets <- TblType %>% filter(Idx %in% IdxAsset) %>% pull(Name)
+
+LstAssets <- list(TypeAsset, n, IdxAsset, CodeAssets, NmAssets) # Not in use
+
+SubDB <- DbWork %>% 
+  filter((Asset %in% CodeAssets ) & (Date > "2021-03-01"))
+
+# Routine to gather data and plot graphics
+SelPlotAsset <- function (Code, Dt = "2021-03-01", Scale = "2 month") {
+  DbTmp <- DbWork %>% 
+    filter((Asset %in% Code) & (Date > Dt))
+  P <- ggplot(DbTmp, aes(x=Date,y=Vl)) +
+    geom_line(size=0.8)+
+    facet_wrap(~Name)+
+    xlab("Date") + ylab("Price") + 
+    theme(plot.title = element_text(hjust = 0.5)) + 
+    scale_x_date(date_labels = "%b %y", date_breaks = Scale)+
+    theme_bw()
+  P + theme(axis.text.x=element_text(angle=90))
+}
+
+# BRADESCO
+SelPlotAsset(CodeAssets[1])
+
+```
+
+\subsubsection{Performance}
+
+Monthly performance
+
+```{r, include=TRUE, eval=TRUE}
+# BRADESCO
+R1 <- monthlyReturn(SelSubTS(CodeAssets[1])); colnames(R1) <- NmAssets[1]
+
+autoplot(R1)+
+  theme_bw()
+
+PrtTbl <- data.frame(index(R1), format(round(R1*100,digits=4), width = 8, 
+                                       digits = 2, nsmall = 4, justify = "centre"))
+kableExtra::kable(PrtTbl, "latex", align = "rr", col.names = c("Month",NmAssets[1]), 
+                  booktabs = T, caption = "Monthly Return Pct.") %>% 
+  kableExtra::column_spec(2:4, width = "4cm")
+```
+
+
+\subsection{Multimarket Funds}
+
+\subsubsection{Historical Series}
+
+```{r, include=TRUE, eval=TRUE, fig.cap= 'Multimarket', fig.height = 3.5, fig.width = 6}
+TypeAsset <- "Multimarket-BR"
+
+IdxAsset <- TblType %>% filter(Type %in% TypeAsset) %>% pull(Idx)
+
+CodeAssets <- paste0("Asset", IdxAsset)
+
+n <- length(CodeAssets)
+
+NmAssets <- TblType %>% filter(Idx %in% IdxAsset) %>% pull(Name)
+
+LstAssets <- list(TypeAsset, n, IdxAsset, CodeAssets, NmAssets) # Not in use
+
+SubDB <- DbWork %>% 
+  filter((Asset %in% CodeAssets ) & (Date > "2021-03-01"))
+
+# BRADESCO
+SelPlotAsset(CodeAssets[1])
+
+# Code 1 - [1] "Asset18" "Asset19"
+# SelPlotAsset(CodeAssets[4])
+
+# ITAU
+# SelPlotAsset(CodeAssets[6], Scale = "1 months")
+
+SelPlotAsset(CodeAssets[c(7, 9)], Scale = "2 months")
+
+# XP Investimentos
+SelPlotAsset(CodeAssets[10], Scale = "2 months")
+
+SelPlotAsset(CodeAssets[11], Scale = "2 months")
+
+
+```
+\subsubsection{Performance}
+
+Monthly performance
+
+```{r, include=TRUE, eval=TRUE}
+# BRADESCO
+R1 <- monthlyReturn(SelSubTS(CodeAssets[1])); colnames(R1) <- NmAssets[1]
+R2 <- monthlyReturn(SelSubTS(CodeAssets[7])); colnames(R2) <- NmAssets[7]
+R3 <- monthlyReturn(SelSubTS(CodeAssets[9])); colnames(R3) <- NmAssets[9]
+R4 <- monthlyReturn(SelSubTS(CodeAssets[10])); colnames(R4) <- NmAssets[10]
+R5 <- monthlyReturn(SelSubTS(CodeAssets[11])); colnames(R5) <- NmAssets[11]
+
+#autoplot(R2)+ggtitle("Profitability")+
+#  theme_bw()
+
+autoplot(cbind(R1, R2, R3, R4, R5))+
+  theme_bw()
+
+```
+
+\pagebreak
+
+\begin{landscape}
+
+```{r, include=TRUE, eval=TRUE}
+PrtTbl <- data.frame(index(R1), format(round(R1*100,digits=4), width = 8, 
+                                       digits = 2, nsmall = 4, justify = "centre"),
+                     format(round(R2*100,digits=4), width = 8, 
+                            digits = 2, nsmall = 4, justify = "centre"),
+                     format(round(R3*100,digits=4), width = 8, 
+                            digits = 2, nsmall = 4, justify = "centre"),
+                     format(round(R4*100,digits=4), width = 8, 
+                            digits = 2, nsmall = 4, justify = "centre"),
+                     format(round(R5*100,digits=4), width = 8, 
+                            digits = 2, nsmall = 4, justify = "centre"))
+kableExtra::kable(PrtTbl, "latex", align = "rr", 
+                  col.names = c("Month",NmAssets[1],NmAssets[7],
+                                NmAssets[9],NmAssets[10], NmAssets[11]), 
+                  booktabs = T, caption = "Monthly Return Pct.") %>% 
+  kableExtra::column_spec(2:7, width = "3cm")
+```
+
+\end{landscape}
+
+\pagebreak
+
+```{r, include=TRUE, eval=TRUE}
+# ITAU
+R2 <- monthlyReturn(SelSubTS(CodeAssets[7])); colnames(R2) <- NmAssets[7]
+R4 <- monthlyReturn(SelSubTS(CodeAssets[9])); colnames(R4) <- NmAssets[9]
+
+autoplot(cbind(R2, R4))+
+  theme_bw()
+
+PrtTbl <- data.frame(index(R2), format(round(R2*100,digits=4), width = 8, 
+                            digits = 2, nsmall = 4, justify = "centre"),
+                     format(round(R4*100,digits=4), width = 8, 
+                            digits = 2, nsmall = 4, justify = "centre"))
+
+kableExtra::kable(PrtTbl, "latex", align = "rr", col.names = c("Month",NmAssets[7],NmAssets[9]), 
+                  booktabs = T, caption = "Monthly Return Pct.") %>% 
+  kableExtra::column_spec(2:5, width = "4cm")
+```
+
+```{r, include=TRUE, eval=TRUE}
+# XP Investimentos
+R1 <- monthlyReturn(SelSubTS(CodeAssets[10])); colnames(R1) <- NmAssets[10]
+R2 <- monthlyReturn(SelSubTS(CodeAssets[11])); colnames(R2) <- NmAssets[11]
+
+autoplot(cbind(R1, R2))+
+  theme_bw()
+
+PrtTbl <- data.frame(index(R1), format(round(R1*100,digits=4), width = 8, 
+                                       digits = 2, nsmall = 4, justify = "centre"),
+                     format(round(R2*100,digits=4), width = 8, 
+                            digits = 2, nsmall = 4, justify = "centre"))
+kableExtra::kable(PrtTbl, "latex", align = "rr", col.names = c("Month",NmAssets[10],NmAssets[11]), 
+                  booktabs = T, caption = "Monthly Return Pct.") %>% 
+  kableExtra::column_spec(2:3, width = "4cm")
+```
+
+Kapitalo / KINEA (Historic)
+
+```{r, include=TRUE, eval=TRUE, fig.cap= 'Multimarket Historic', fig.height = 3.5, fig.width = 6}
+# Gather data before Jan, 2020
+SubDB <- DbWork %>% 
+  filter((Asset %in% CodeAssets ) & (Date < "2020-01-15"))
+R1 <- monthlyReturn(SelSubTS(CodeAssets[1])); colnames(R1) <- NmAssets[1]
+autoplot(R1)+
+  theme_bw()
+
+```
+
+\subsubsection{Focus - Verde Multiestrategia}
+
+```{r, include=TRUE, eval=TRUE, fig.cap= 'Multimarket', fig.height = 3.5, fig.width = 6}
+TypeAsset <- "Multimarket-BR"
+
+IdxAsset <- TblType %>% filter(Type %in% TypeAsset) %>% pull(Idx)
+
+CodeAssets <- paste0("Asset", IdxAsset)
+
+n <- length(CodeAssets)
+
+NmAssets <- TblType %>% filter(Idx %in% IdxAsset) %>% pull(Name)
+
+LstAssets <- list(TypeAsset, n, IdxAsset, CodeAssets, NmAssets) # Not in use
+
+SubDB <- DbWork %>% 
+  filter((Asset %in% CodeAssets )) # & (Date > "2021-03-01"))
+
+# BRADESCO
+SelPlotAsset(CodeAssets[c(7,9)], Dt = "2020-01-15", Scale = "4 months")
+
+```
+
+```{r, message=FALSE, warning=FALSE}
+# Bradesco Multiestrategia
+R1 <- monthlyReturn(SelSubTS(CodeAssets[7])); colnames(R1) <- NmAssets[7]
+R3 <- monthlyReturn(SelSubTS(CodeAssets[9])); colnames(R3) <- NmAssets[9]
+
+autoplot(cbind(R1, R3))+
+  theme_bw()
+
+PrtTbl <- data.frame(index(R1), format(round(R1*100,digits=4), width = 8, 
+                                       digits = 2, nsmall = 4, justify = "centre"),
+                     format(round(R3*100,digits=4), width = 8, 
+                            digits = 2, nsmall = 4, justify = "centre"))
+kableExtra::kable(PrtTbl, "latex", align = "rrrr", col.names = c("Month",NmAssets[7],NmAssets[9]), 
+                  booktabs = T, caption = "Monthly Return Pct.") %>% 
+  kableExtra::column_spec(2:3, width = "4cm")
+```
+
+
+\subsubsection{Standardized Portfolios}
+
+When comparing the standardized portfolios of Multimarket assets:
+
+```{r, fig.cap= 'Stardardized Portfolios of Multimarket Compared'}
+# Portfolios to be compared
+Br <- AssetAlloc %>% 
+  filter(Inst == "BRAD", 
+         Type == "Multimarket-BR", 
+         Date > "2021-11-22",
+         !(is.na(Vl) | Vl == 0.0)) %>%
+  group_by(Date, TotAsset) %>% 
+  summarise()
+It <- AssetAlloc %>% 
+  filter(Inst == "ITAU", Type == "Multimarket-BR", 
+         Asset %in% paste0("Asset",c(25,27,31)),
+         Date > "2021-11-22",
+         !(is.na(Vl) | Vl == 0.0)) %>%  # Removing OPP
+  group_by(Date) %>% 
+  mutate(TotAsset = sum(Vl, na.rm = TRUE)) %>%
+  group_by(Date, TotAsset) %>% 
+  summarise()
+Xp <- AssetAlloc %>% 
+  filter(Inst == "XPINV", 
+         Type == "Multimarket-BR", 
+         Date > "2021-11-22",
+         !(is.na(Vl) | Vl == 0.0)) %>%
+  group_by(Date, TotAsset) %>% 
+  summarise()
+
+# Finding Maximum / Minimum to standardize series
+MxI <- max(It$TotAsset); MiI <- min(It$TotAsset)
+MxB <- max(Br$TotAsset); MiB <- min(Br$TotAsset)
+MxX <- max(Xp$TotAsset); MiX <- min(Xp$TotAsset)
+
+lIt <- (It$TotAsset-MiI)/(MxI-MiI)
+lBr <- (Br$TotAsset-MiB)/(MxB-MiB)
+lXp <- (Xp$TotAsset-MiX)/(MxX-MiX)
+
+#ggplot(data = It) + 
+#  geom_line(aes(x = Date, y = (TotAsset-MiI)/(MxI-MiI), color = "ITAU"), size = 1.2) +
+#  geom_line(data = Br, aes(x = Date, y = (TotAsset-MiB)/(MxB-MiB), color = "BRAD"), size = 1.2)+
+#  geom_line(data = Xp, aes(x = Date, y = (TotAsset-MiX)/(MxX-MiX), color = "XPInv"), size = 1.5)+
+#  ggtitle("Standardized Portfolios") + 
+#  xlab("Date") + ylab("Net Portfolio Variation") + 
+#  theme(plot.title = element_text(hjust = 0.5)) + 
+#  scale_x_date(date_labels = "%d%b", date_breaks = "2 months")+
+#  theme_bw()
+
+ggplot(data = It) + 
+  geom_line(aes(x = Date, y = lIt, color = "ITAU"), size = 1.2) +
+  geom_line(data = Br, aes(x = Date, y = lBr, color = "BRAD"), size = 1.2)+
+  geom_line(data = Xp, aes(x = Date, y = lXp, color = "XPInv"), size = 1.5)+
+  ggtitle("Standardized Portfolios") + 
+  xlab("Date") + ylab("Net Portfolio Variation") + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  scale_x_date(date_labels = "%d%b", date_breaks = "2 months")+
+  theme_bw()
+```
+
+
+\subsection{Foreign Currency and Retirement}
+
+\subsubsection{Historical Series}
+
+```{r, include=TRUE, eval=TRUE, fig.cap= 'Retirement / USD', fig.height = 3.5, fig.width = 6}
+TypeAsset <- c("Retirement", "Foreign Currency", "Real State" )
+
+IdxAsset <- TblType %>% filter(Type %in% TypeAsset) %>% pull(Idx)
+
+CodeAssets <- paste0("Asset", IdxAsset)
+
+n <- length(CodeAssets)
+
+NmAssets <- TblType %>% filter(Idx %in% IdxAsset) %>% pull(Name)
+
+LstAssets <- list(TypeAsset, n, IdxAsset, CodeAssets, NmAssets) # Not in use
+
+# sum(SubDB %>% filter(Asset=="Asset5") %>% pull(Vl))
+
+SubDB <- DbWork %>% 
+  filter((Asset %in% CodeAssets ) & (Date > "2019-06-13"))
+
+# Code 3, 7 - [1] "Asset19" "Asset27"
+SelPlotAsset(CodeAssets[7], "2019-06-13", "4 months")
+
+# Code 2 - [1] "Asset6"
+SelPlotAsset(CodeAssets[2], "2019-06-13", "4 months")
+
+```
+
+```{r, include=TRUE, eval=TRUE, fig.cap= 'Retirement 2022', fig.height = 3.5, fig.width = 6}
+SubDB %>% 
+  filter(Asset=="Asset6", Date > "2021-12-31") %>% 
+  ggplot() + 
+  geom_line(aes(x = Date, y = Vl, color = "BRAD"), size = 1.2) +
+  xlab("Date") + ylab("Retirement 2022") + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  scale_x_date(date_labels = "%d%b", date_breaks = "2 month")+
+  theme_bw()
+```
+
+
+```{r, include=TRUE, eval=TRUE, fig.cap= 'Retirement / USD', fig.height = 3.5, fig.width = 6}
+# Retirement + Foreign Currency
+R1 <- monthlyReturn(SelSubTS(CodeAssets[7])); colnames(R1) <- NmAssets[7]
+R2 <- monthlyReturn(SelSubTS(CodeAssets[2])); colnames(R2) <- NmAssets[2]
+
+autoplot(R1)+
+  theme_bw()
+
+autoplot(R2)+
+  theme_bw()
+
+PrtTbl <- data.frame(index(R1), format(round(R1*100,digits=4), width = 8, 
+                                       digits = 2, nsmall = 4, justify = "centre"),
+                     format(round(R2*100,digits=4), width = 8, 
+                            digits = 2, nsmall = 4, justify = "centre"))
+
+kableExtra::kable(PrtTbl, "latex", align = "rr", col.names = c("Month",NmAssets[7],NmAssets[2]), 
+                  booktabs = T, caption = "Monthly Return Pct.") %>% 
+  kableExtra::column_spec(2:3, width = "4cm")
+
+
+# Group 2 - Code 2 - [1] "Asset6"
+#R1 <- monthlyReturn(SelSubTS(CodeAssets[2])); colnames(R1) <- NmAssets[2]
+#autoplot(R1)+
+#  theme_bw()
+
+#PrtTbl <- data.frame(index(R1), format(round(R1*100,digits=4), width = 8, 
+#                                  digits = 2, nsmall = 2, justify = "centre"))
+#kableExtra::kable(PrtTbl, "html", align = "rr", col.names = c("Month",NmAssets[2]), 
+#                  booktabs = T, caption = "Monthly Return Pct.") %>% 
+#  kableExtra::column_spec(2, width = "4cm")
+
+cat("\nAvg.Monthly Return-Retirement:", mean(R2))
+```
+
+\subsection{Fixed Income}
+
+\subsubsection{Historical Series}
+
+```{r, include=TRUE, eval=TRUE, fig.cap= 'Fixed Income', fig.height = 3.5, fig.width = 6}
+TypeAsset <- "Fixed Income"
+
+IdxAsset <- TblType %>% filter(Type %in% TypeAsset) %>% pull(Idx)
+
+CodeAssets <- paste0("Asset", IdxAsset)
+
+n <- length(CodeAssets)
+
+NmAssets <- TblType %>% filter(Idx %in% IdxAsset) %>% pull(Name)
+
+LstAssets <- list(TypeAsset, n, IdxAsset, CodeAssets, NmAssets) # Not in use
+
+SubDB <- DbWork %>% 
+  filter((Asset %in% CodeAssets ) & (Date > "2020-01-15"))
+
+# SelPlotAsset(CodeAssets)
+
+# Codes 1, 4 - [1] "Asset8"  "Asset19"
+SelPlotAsset(CodeAssets[c(1, 5)], Scale = "2 months")
+
+SelPlotAsset(CodeAssets[6], "2020-09-01", "2 month")
+
+SelPlotAsset(CodeAssets[7], "2021-10-01", "2 month")
+SelPlotAsset(CodeAssets[8], "2021-10-01", "2 month")
+
+```
+
+
+\subsubsection{Performance}
+
+Monthly performance
+
+```{r, include=TRUE, eval=TRUE, fig.cap= 'Fixed Income', fig.height = 3.5, fig.width = 6}
+
+# Group 2 - Codes 1, 4, - [1] "Asset8"  "Asset9"
+R1 <- monthlyReturn(SelSubTS(CodeAssets[5])); colnames(R1) <- NmAssets[5]
+R2 <- monthlyReturn(SelSubTS(CodeAssets[1])); colnames(R2) <- NmAssets[1]
+autoplot(cbind(R1, R2))+
+  theme_bw()
+
+# Group 1 - Code 5 - [1] "Asset22"
+R3 <- monthlyReturn(SelSubTS(CodeAssets[6])); colnames(R3) <- NmAssets[6]
+autoplot(R3)+
+  theme_bw()
+
+PrtTbl <- data.frame(index(R1), format(round(R1*100,digits=4), width = 8, 
+                                       digits = 2, nsmall = 4, justify = "centre"),
+                     format(round(R3*100,digits=4), width = 8, 
+                            digits = 2, nsmall = 4, justify = "centre"))
+
+kableExtra::kable(PrtTbl, "latex", align = "rr", col.names = c("Month",NmAssets[5],NmAssets[6]), 
+                  booktabs = T, caption = "Monthly Return Pct.") %>% 
+  kableExtra::column_spec(2:3, width = "4cm")
+
+
+```
+
+```{r, include=TRUE, eval=TRUE, warning=FALSE}
+# Group 2 - Codes 1, 4, - [1] "Asset8"  "Asset9"
+R1 <- monthlyReturn(SelSubTS(CodeAssets[7])); colnames(R1) <- NmAssets[7]
+R2 <- monthlyReturn(SelSubTS(CodeAssets[8])); colnames(R2) <- NmAssets[8]
+autoplot(cbind(R1, R2))+
+  theme_bw()
+
+PrtTbl <- data.frame(index(R1), format(round(R1*100,digits=4), width = 8, 
+                                       digits = 2, nsmall = 4, justify = "centre"))
+
+kableExtra::kable(PrtTbl, "latex", align = "rr", col.names = c("Month",NmAssets[7]), 
+                  booktabs = T, caption = "Monthly Return Pct.") %>% 
+  kableExtra::column_spec(2:3, width = "4cm")
+
+PrtTbl <- data.frame(index(R2), format(round(R2*100,digits=4), width = 8, 
+                            digits = 2, nsmall = 4, justify = "centre"))
+
+kableExtra::kable(PrtTbl, "latex", align = "rr", col.names = c("Month",NmAssets[8]), 
+                  booktabs = T, caption = "Monthly Return Pct.") %>% 
+  kableExtra::column_spec(2:3, width = "4cm")
+```
+
+\section{Selling Assets}
+
+```{r}
+SubDB <- DbWork %>%
+  inner_join(TblType) %>% 
+  filter(Idx %in% c(7,11,19,20,24,29), Vl>0.0) %>% 
+#  filter(Idx %in% c(7,11,29), Vl>0.0) %>% 
+  group_by(Date) %>% 
+  mutate(TotalDay = sum(Vl, na.rm = TRUE)) %>% 
+  ungroup()
+
+# Routine to gather data and plot graphics
+PlotFullAsset <- function (df, code, Scale = "1 month") {
+  DbTmp <- df %>% 
+    filter(Asset == paste0("Asset",code))
+  Name <- DbTmp$Name[1]
+  P <- ggplot(DbTmp, aes(x=Date,y=Vl)) +
+    geom_line(size=0.8)+
+    xlab("Date") + ylab("Price") + 
+    ggtitle(Name)+
+    theme(plot.title = element_text(hjust = 0.5)) + 
+    scale_x_date(date_labels = "%b %y", date_breaks = Scale)+
+    theme_bw()
+  P + theme(axis.text.x=element_text(angle=90))
+}
+
+# Plot Assets' full period
+PlotFullAsset(SubDB, 7)
+PlotFullAsset(SubDB, 11)
+PlotFullAsset(SubDB, 29)
+PlotFullAsset(SubDB, 20)
+PlotFullAsset(SubDB, 24, Scale = "3 month")
+PlotFullAsset(SubDB, 19)
+
+TmpDB <- SubDB %>% filter(Date >="2021-02-22")
+
+P <- ggplot(TmpDB, aes(x=Date,y=TotalDay)) +
+  geom_line(size=0.8)+
+  xlab("Date") + ylab("Price") + 
+  ggtitle("Composed Asset - Stock & Multimarket")+
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  scale_x_date(date_labels = "%b %y", date_breaks = "2 month")+
+  theme_bw()
+P + theme(axis.text.x=element_text(angle=90))
+
+DbTmp <- SubDB %>% 
+  select(Date, TotalDay) %>%
+  group_by(Date, TotalDay) %>% 
+  summarise()
+TSTmp <- xts(DbTmp$TotalDay, order.by = DbTmp$Date)
+colnames(TSTmp) <- "Vl"
+
+chart_Series(TSTmp)
+
+R1 <- monthlyReturn(TSTmp); colnames(R1) <- "Sub-Portfolio"
+
+P <- autoplot(R1)+
+  scale_x_date(date_labels = "%b %y", date_breaks = "2 month")+
+  theme_bw()
+P + theme(axis.text.x=element_text(angle=90))
+
+
+```
+

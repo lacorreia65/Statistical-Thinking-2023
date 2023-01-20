@@ -549,3 +549,57 @@ ggplot(df, aes(x=W_contrast,fill=W_flag))+
   geom_density()+
   theme_bw()
 ```
+
+Now, what is the direct effect of sex over weight?
+
+```{r, message=FALSE}
+S <- rbern(100)+1
+dat <- sim_HW(S, b=c(.5,.5), a=c(0,10))
+
+# Indirect effect (b) is the same for men and women
+dat |> 
+  ggplot(aes(x=H, y=W, color=factor(S)))+
+  geom_point()+
+  geom_smooth(method = lm)+
+  # facet_wrap(~S)+
+  theme_bw()
+```
+
+```{r, message=FALSE}
+dat <- list(
+  W = d$weight,
+  H = d$height,
+  Hbar = mean(d$height),
+  S = d$male+1 )
+
+m_SHW <- quap(
+  alist(
+    W ~ dnorm(mu,sigma),
+    mu <- a[S]+b[S]*(H-Hbar),
+    a[S] ~ dnorm(60,10),
+    b[S] ~ dunif(0,1),
+    sigma ~ dunif(0,10)
+  ), data=dat
+)
+data.frame(dat) |> 
+  ggplot(aes(x=H, y=W, color=factor(S)))+
+  geom_point()+
+  geom_smooth(method = lm)+
+  # facet_wrap(~S)+
+  theme_bw()
+
+precis(m_SHW,depth=2)
+```
+
+Note that regression line's slopes are almost the same for both male and female.
+
+```{r}
+post <- extract.samples(m_SHW)
+dens(post$b[,1],xlim=c(.3, .9),ylim=c(0,8),
+     lwd=3,col=2,xlab="posterior mean weight(kg)")
+dens(post$b[,2],lwd=3,col=4,add=TRUE)
+```
+
+```{r}
+
+```
