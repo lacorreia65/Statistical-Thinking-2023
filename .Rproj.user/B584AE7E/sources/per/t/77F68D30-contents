@@ -5,6 +5,15 @@ format: html
 editor: visual
 ---
 
+## Setup R
+
+```{r}
+library(rethinking)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+```
+
 ## Lecture 1
 
 The content of this lecture should be reviewed and posted.
@@ -160,8 +169,6 @@ sum(sim_globe(p = .5, N = 1e4 )=='W')/1e4
 ```
 
 ```{r}
-library(ggplot2)
-
 compute_posterior <- function (the_sample, poss = c(0,.25,.5,.75,1)) {
   W <- sum(the_sample=='W')  # No. of 'W'
   L <- sum(the_sample=='L')  # No. of 'L'
@@ -186,7 +193,7 @@ compute_posterior(the_sample)
 Calculating the posteriors using the conjugate prior beta
 
 ```{r}
-library(rethinking)
+
 post_samples <- rbeta(1e3, 6+1, 3+1)
 ```
 
@@ -222,7 +229,6 @@ W = \beta H + U
 $$
 
 ```{r}
-library(rethinking)
 
 sim_weight <- function (H, b, sd) {
   U <-  rnorm(length(H),0,sd)
@@ -273,7 +279,6 @@ $$
 $$
 
 ```{r}
-library(rethinking)
 
 data(Howell1)
 d <-Howell1[Howell1$age>=18,]
@@ -393,14 +398,67 @@ abline(v=theta_hat, col = 'red')
 #dev.off()
 ```
 
+#### Difference between Percentile and C.I. for Mean
+
+```{r}
+n <- 100
+
+nsurveys <- 200
+
+meanSurveys <- vector()
+sdSurveys <- vector()
+SSampl <- vector()
+percs <- vector()
+
+
+for (i in 1:nsurveys) {
+  S <- rnorm(n, mean=2, sd=5)
+  mu_hat <- mean(S)
+  sd_hat <- sd(S)
+  SSampl <- c(SSampl, list(S))
+  percs <- c(percs,list(quantile(S,probs=c(.025,.975))))
+  meanSurveys <- c(meanSurveys, mu_hat)  # append mu_hat
+  sdSurveys <- c(sdSurveys, sd_hat)   # append sd_hat
+}
+
+# Calculating MOE
+MOE <- qnorm(.975)*sdSurveys/sqrt(n)
+
+dataSampl <- data.frame (
+  mu_hat = meanSurveys,
+  sd_hat = sdSurveys,
+  MOE = MOE,
+  lower = meanSurveys-qnorm(.975)*sdSurveys/sqrt(n),
+  upper = meanSurveys+qnorm(.975)*sdSurveys/sqrt(n)
+)
+
+```
+
+```{r, fig.height = 3.5, fig.width = 6.5}
+set.seed(42)
+SSlice <- sample(1:nsurveys,100)
+dataSampl %>%
+  slice(SSlice) %>% # select 100 samples
+  ggplot(aes(x = c(1:100))) + 
+  geom_errorbar(aes(ymin=lower, ymax=upper), width=.1) + 
+  geom_point(aes(y=mu_hat)) + 
+  xlab("Sample of Approval Estimate") + ylab("95% I.C.") + 
+  theme_bw()
+```
+
+```{r}
+i <- 5
+L <- SSampl[SSlice[i]]
+# quantile(L[[1]],probs=c(.025,.975))
+percs[SSlice][i-1]
+percs[SSlice][i]
+```
+
 ## Lecture 4
 
 ### Workflow
 
 ```{r}
-library(rethinking)
-library(tidyverse)
-library(dplyr)
 
 data(Howell1)
 d <-Howell1[Howell1$age>=18,]

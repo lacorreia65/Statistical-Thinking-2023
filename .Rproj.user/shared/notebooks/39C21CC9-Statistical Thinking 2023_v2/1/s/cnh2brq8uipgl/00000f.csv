@@ -1,6 +1,0 @@
-"0","xseq <- seq(from=130,to=190, len=50)"
-"0","muF <- "
-"0","  link(m_adults2, data=list(S=rep(1,50),H=xseq,Hbar=mean(d$height)))"
-"2","Error in h(simpleError(msg, call)) : 
-  error in evaluating the argument 'fit' in selecting a method for function 'link': object 'm_adults2' not found
-"
