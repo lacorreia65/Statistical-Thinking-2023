@@ -1,4 +1,0 @@
-"0","d |> "
-"0","  ggplot(aes(x=height, y=weight, color=factor(male)))+"
-"0","  geom_point()+"
-"0","  theme_bw()"

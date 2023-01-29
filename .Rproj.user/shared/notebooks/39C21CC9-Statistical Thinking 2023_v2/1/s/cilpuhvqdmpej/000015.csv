@@ -1,1 +1,0 @@
-"0","for (j in 1:50 ) abline(a=a[j], b=b[j], lwd=2, col=2)"

@@ -1,5 +1,0 @@
-"0","w <-6;n<-9;"
-"0","p_grid <-seq(from=0,to=1,length.out=100)"
-"0","posterior <-dbinom(w,n,p_grid)*dunif(p_grid,0,1)"
-"0","posterior <-posterior/sum(posterior)"
-"0","plot(posterior,col=2, type=""l"")"

@@ -1,7 +1,0 @@
-"0","library(rethinking)"
-"0",""
-"0","sim_weight <- function (H, b, sd) {"
-"0","  U <-  rnorm(length(H),0,sd)"
-"0","  W <- b*H + U"
-"0","  return(W)"
-"0","}"

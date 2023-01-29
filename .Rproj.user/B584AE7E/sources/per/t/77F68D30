@@ -3,7 +3,7 @@
     "path": "C:/Users/lacor/OneDrive/100. Personal/SelfDevelopment/25. Project 2022/Statistical-Thinking-2023/Statistical Thinking 2023_v2.qmd",
     "project_path": "Statistical Thinking 2023_v2.qmd",
     "type": "quarto_markdown",
-    "hash": "3741477333",
+    "hash": "59382345",
     "contents": "",
     "dirty": false,
     "created": 1673908998203.0,
@@ -16,16 +16,17 @@
         "Source": "Source",
         "docOutlineVisible": "1",
         "rmdVisualCollapsedChunks": "",
-        "rmdVisualModeLocation": "359:954",
-        "cursorPosition": "448,0",
-        "scrollLine": "0"
+        "rmdVisualModeLocation": "14113:13929",
+        "cursorPosition": "734,0",
+        "scrollLine": "0",
+        "docOutlineSize": "118"
     },
     "folds": "",
-    "lastKnownWriteTime": 1674288067,
+    "lastKnownWriteTime": 1674978203,
     "encoding": "UTF-8",
     "collab_server": "",
     "source_window": "",
-    "last_content_update": 1674701597251,
+    "last_content_update": 1674978203724,
     "read_only": false,
     "read_only_alternatives": []
 }

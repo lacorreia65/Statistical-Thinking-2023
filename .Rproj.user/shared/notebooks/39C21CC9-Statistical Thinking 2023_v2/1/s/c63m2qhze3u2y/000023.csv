@@ -1,5 +1,0 @@
-"0",""
-"0","height_seq <- seq(130,190,len=20)"
-"0","W_postpred <- sim(m3.2,data=list(H=height_seq))"
-"0","W_PI <- apply(W_postpred,2,PI)"
-"0","lines(height_seq,W_PI[1,],lty=2,lwd=2)"

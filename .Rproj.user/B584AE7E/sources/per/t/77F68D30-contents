@@ -12,6 +12,7 @@ library(rethinking)
 library(tidyverse)
 library(dplyr)
 library(ggplot2)
+library(rstan)
 ```
 
 ## Lecture 1
@@ -459,9 +460,9 @@ percs[SSlice][i]
 ### Workflow
 
 ```{r}
-
 data(Howell1)
-d <-Howell1[Howell1$age>=18,]
+# d <-Howell1[Howell1$age>=18,]
+d <-Howell1
 ```
 
 ```{r}
@@ -660,4 +661,165 @@ dens(post$b[,2],lwd=3,col=4,add=TRUE)
 
 ```{r}
 
+```
+
+### Polynomials
+
+```{r}
+plot(height~weight,d)
+```
+
+```{r}
+d$weight_s <-(d$weight-mean(d$weight))/sd(d$weight)
+d$weight_s2 <-d$weight_s^2
+m4.5 <-quap(
+  alist(
+    height ~dnorm(mu,sigma),
+    mu <-a+b1*weight_s+b2*weight_s2,
+    a ~dnorm(178,20),
+    b1 ~dlnorm(0,1),
+    b2 ~dnorm(0,1),
+    sigma ~dunif(0,50)
+  ) ,data=d)
+```
+
+```{r}
+precis(m4.5)
+```
+
+```{r}
+# Not working - To be Reviewed
+stan_m4.5 <- "
+data {
+  int<lower = 1> N;
+  vector[N] height;
+  vector[N] weight_s;
+  vector[N] weight_s2;
+}
+parameters {
+  real a;
+  real b1;
+  real b2;
+  real <lower=0> sigma;
+}
+
+transformed parameters {
+  vector[N] mu;
+  
+  for (i in 1:N)
+    mu[i] = a + b1*weight_s[i] + b2*weight_s2[i];
+}
+
+model {
+  // priors
+  a ~ normal(178,20);
+  b1 ~ normal(0,1);
+  b2 ~ normal(0,1);
+  sigma ~ uniform(0,50);
+  
+  // model  
+  height ~normal(mu,sigma);
+}"
+data_m4.5  <- list(
+  N = nrow(d),
+  height = d$height,
+  weight_s = d$weight_s,
+  weight_s2 = d$weight_s2
+)
+
+#fit_m4.5 <- stan(data = data_m4.5, model_code = stan_m4.5, 
+#                 chains = 3, iter = 1000)
+
+```
+
+```{r}
+# Same Model in STAN
+stan_m4.6 <- "
+data {
+  int<lower = 1> N;
+  vector[N] height;
+  vector[N] weight_s;
+  vector[N] weight_s2;
+}
+
+transformed data{
+  real bar_x1;
+  real x1_sd;
+  vector[N] x1_std;
+  real y_sd;
+
+  bar_x1 = mean(weight_s);
+  x1_sd = sd(weight_s);
+  x1_std = (weight_s - bar_x1)/x1_sd; // centered and scaled
+
+  y_sd = sd(height);
+}
+
+parameters {
+  real alpha_std;
+  real beta1_std;
+  real beta3_std;
+  real <lower=0> sigma;
+}
+
+transformed parameters {
+  vector[N] mu;
+  
+  for (i in 1:N)
+    mu[i] = alpha_std + beta1_std*weight_s[i] + 
+        beta3_std*weight_s2[i];
+}
+
+model {
+  // priors
+  alpha_std ~ normal(0,20);
+  beta1_std ~ normal(0,2);
+  beta3_std ~ normal(0,2);
+  sigma ~ normal(5,1.5);
+  // sigma ~ exponential(1/y_sd);  
+  
+  // model  
+  height ~normal(mu,sigma);
+}
+
+generated quantities {
+  real alpha;
+  real beta1;
+  real beta3;
+
+  alpha = alpha_std - (beta1_std*bar_x1)/x1_sd 
+      + (beta3_std*bar_x1^2)/x1_sd^2;
+
+  beta1 = beta1_std/x1_sd - 2*(beta3_std*bar_x1)/x1_sd^2;
+
+  beta3 = beta3_std/x1_sd^2;
+}"
+
+data_m4.6  <- list(
+  N = nrow(d),
+  height = d$height,
+  weight_s = d$weight_s,
+  weight_s2 = d$weight_s2
+)
+
+fit_m4.6 <- stan(data = data_m4.6, 
+                 model_code = stan_m4.6,
+                 chains = 4,
+                 iter = 2000)
+
+```
+
+```{r}
+print(fit_m4.6, pars = c("alpha","beta1", "beta3", "sigma"))
+print(fit_m4.6, pars = c("alpha_std","beta1_std", "beta3_std", "sigma"))
+precis(m4.5)
+```
+
+```{r}
+traceplot(fit_m4.6, pars = "sigma")
+```
+
+```{r}
+sigma_sample <- extract(fit_m4.6)[["sigma"]]
+hist(sigma_sample)
 ```

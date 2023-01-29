@@ -1,0 +1,2 @@
+"0","sigma_sample <- extract(fit_m4.6)[[""sigma""]]"
+"0","hist(sigma_sample)"
