@@ -775,8 +775,8 @@ model {
   alpha_std ~ normal(0,20);
   beta1_std ~ normal(0,2);
   beta3_std ~ normal(0,2);
-  sigma ~ normal(5,1.5);
-  // sigma ~ exponential(1/y_sd);  
+  //sigma ~ normal(5,1.5);
+  sigma ~ exponential(1/y_sd);  
   
   // model  
   height ~normal(mu,sigma);

@@ -1,3 +1,0 @@
-"0","H <-  runif(200, min=130, max=170)"
-"0","W <- sim_weight(H, b=.5, sd=5)"
-"0","plot(W ~ H, col=2, lwd=3)"
