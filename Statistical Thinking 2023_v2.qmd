@@ -823,3 +823,118 @@ traceplot(fit_m4.6, pars = "sigma")
 sigma_sample <- extract(fit_m4.6)[["sigma"]]
 hist(sigma_sample)
 ```
+
+### Cherry Blossoms example (pp.114) - Splines
+
+```{r}
+data(cherry_blossoms)
+d <-cherry_blossoms
+d2 <- d[ complete.cases(d$temp),]
+precis(d2)
+```
+
+```{r}
+?cherry_blossoms
+d2 <-d[complete.cases(d$doy),]#completecasesondoy
+num_knots <-15
+knot_list <-quantile(d2$year,probs=seq(0,1,length.out=num_knots))
+```
+
+Building B (Block Variables)
+
+```{r}
+library(splines)
+B <-bs(d2$year,
+       knots=knot_list[-c(1,num_knots)] ,
+       degree=3 ,intercept=TRUE)
+```
+
+```{r}
+plot( NULL,xlim=range(d2$year),ylim=c(0,1),xlab="year",ylab="basis")
+for (i in 1:ncol(B))lines(d2$year,B[,i])
+```
+
+```{r}
+m4.7 <-quap(
+  alist(
+    D ~dnorm(mu,sigma),
+    mu <-a+B%*%w,
+    a ~dnorm(100,10),
+    w ~dnorm(0,10),
+    sigma ~dexp(1)
+  ), data=list(D=d2$doy,B=B),
+  start=list( w=rep(0,ncol(B))))
+```
+
+```{r}
+precis(m4.7)
+```
+
+```{r}
+post <-extract.samples(m4.7)
+w <-apply(post$w,2,mean)
+#plot( NULL,xlim=range(d2$year),ylim=c(-6,6),
+#      xlab="year" ,ylab="basis*weight")
+plot( d2$year,d2$doy-m4.7@optim$par[18],col=col.alpha(rangi2,0.3),pch=16,
+      xlim=range(d2$year),ylim=c(-26,26),
+      xlab="year" ,ylab="basis*weight")
+for (i in 1:ncol(B))lines(d2$year,w[i]*B[,i])
+```
+
+```{r}
+mu <-link(m4.7)
+mu_PI <-apply(mu,2,PI,0.97)
+plot( d2$year,d2$doy,col=col.alpha(rangi2,0.3),pch=16)
+shade( mu_PI,d2$year,col=col.alpha("black",0.5))
+```
+
+```{r}
+m4.7alt <-quap(
+  alist(
+    D ~dnorm(mu,sigma),
+    mu <-a+sapply(1:827,function(i)sum(B[i,]*w)),
+    a ~dnorm(100,1),
+    w ~dnorm(0,10),
+    sigma ~dexp(1)
+  ),
+  data=list( D=d2$doy,B=B),
+  start=list( w=rep(0,ncol(B))))
+```
+
+Now using the B-Splines with the Weight x Height Data, we have the following:
+
+```{r}
+data(Howell1)
+# d <-Howell1[Howell1$age>=18,]
+d <-Howell1
+```
+
+## Lecture 5
+
+```{r}
+n <- 1000
+Z <- rbern(n, .5)
+X <- rbern(n, (1-Z)*.1+Z*.9)
+Y <- rbern(n, (1-Z)*.1+Z*.9)
+```
+
+```{r}
+cor(X,Y)
+```
+
+```{r}
+cols <- c(4,2)
+
+N <- 300
+Z <- rbern(N)
+X <- rnorm(N,2*Z-1)
+Y <- rnorm(N,2*Z-1)
+
+plot(X,Y, col=cols[Z+1], lwd=3)
+
+abline(lm(Y[Z==1]~X[Z==1]), col=2, lwd=3)
+
+abline(lm(Y[Z==0]~X[Z==0]), col=4, lwd=3)
+
+abline(lm(Y~X), lwd=3)
+```
